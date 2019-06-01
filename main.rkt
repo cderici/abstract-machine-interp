@@ -7,7 +7,9 @@
 (define-language RC
   [e   ::= x v (e e ...) (if e e e) (op e ...)
        (set! x e) (begin e e ...)
-       (lambda (x_!_ ...) e) (let-values (((x_!_) e) ...) e) (letrec-values (((x_!_) e) ...) e)
+       (lambda (x_!_ ...) e)
+       (let-values (((x_!_) e) ...) e)
+       (letrec-values (((x_!_) e) ...) e)
        (raises e)] ;; expressiosn
   [v   ::= n b c (void)] ;; values
   [c   ::= (closure x ... e ε)]
@@ -15,25 +17,16 @@
   [b   ::= true false]
   [x cell ::= variable-not-otherwise-mentioned] ;; variables
   [op  ::= add1 + * < sub1]
-  #;[E   ::= hole (v ... E e ...) (op v ... E e ...) (if E e e)
-       (begin v ... E e ...) (set! x E)
-       (let-values (((x) v) ... ((x) E) ((x) e) ...) e)] ;; eval context
 
   [ε   ::= ((x any) ...)] ;; environment
   [Σ   ::= ((x any) ...)] ;; store
 
-  #;[e-test ::= x n b (void)
-          (e-test e-test ...) (lambda (x_!_ ...) e-test) (if e-test e-test e-test)
-          (p2 e-test e-test) (p1 e-test) (set! x e-test) (begin e-test e-test ...)
-          (let-values (((x) e-test) ...) e-test) (raises e-test)] ;; to be used to generate test cases (i.e. exclude closures)
-
   [rc-result ::= v stuck]
-  #;[exp-id ::= x (x x)]
-  #;[C ::= cell uninit]
 
   #:binding-forms
   (λ (x ...) e #:refers-to (shadow x ...))
   (let-values ([(x) e_x] ...) e_body #:refers-to (shadow x ...))
+  (letrec-values ([(x) e_x] ...) #:refers-to (shadow x ...) e_body #:refers-to (shadow x ...))
   )
 
 (define-metafunction RC
