@@ -10,7 +10,7 @@
        (lambda (x_!_ ...) e)
        (let-values (((x_!_) e) ...) e)
        (letrec-values (((x_!_) e) ...) e)
-       (raises e)] ;; expressiosn
+       (raises e) (raise-depth)] ;; expressiosn
   [v   ::= n b c (void)] ;; values
   [c   ::= (closure x ... e ε)]
   [n   ::= number]
@@ -21,6 +21,7 @@
   [ε   ::= ((x any) ...)] ;; environment
   [Σ   ::= ((x any) ...)] ;; store
 
+  [exception ::= (stack-depth-exn n)]
   [rc-result ::= v stuck]
 
   #:binding-forms
@@ -57,15 +58,18 @@
   [(lookup ((x any) ...) _) stuck])
 
 (define-metafunction RC
-  eval-stackful : e -> rc-result
+  eval-stackful : e -> rc-result or exception
   [(eval-stackful e) rc-result
                      (where (rc-result Σ n) (interpret-stack e () () 0))]
+  [(eval-stackful e) exception
+                     (where exception (interpret-stack e () () 0))]
   [(eval-stackful _) stuck])
 
 (define-metafunction RC
   ; (expr env store stack-depth) -> (result store stack-depth)
-  interpret-stack : e ε Σ n -> (rc-result Σ n)
+  interpret-stack : e ε Σ n -> (rc-result Σ n) or exception
   [(interpret-stack (raises e) ε Σ n) (stuck Σ n)] ; for intermediate errors
+  [(interpret-stack (raise-depth) ε Σ n) (stack-depth-exn n)]
   [(interpret-stack rc-result ε Σ n) (rc-result Σ n)]
   [(interpret-stack x ε Σ n) ((lookup Σ (lookup ε x)) Σ n)]
   [(interpret-stack (lambda (x ...) e) ε Σ n) ((closure x ... e ε) Σ n)]
@@ -79,11 +83,20 @@
    (interpret-stack (op v ... v_1 e ...) ε Σ_1 n)
    (side-condition (not (redex-match? RC v (term e_1))))
    (where (v_1 Σ_1 n_1) (interpret-stack e_1 ε Σ ,(add1 (term n))))]
+  [(interpret-stack (op v ... e_1 e ...) ε Σ n)
+   (stuck Σ_1 n_1)
+   (where (stuck Σ_1 n_1) (interpret-stack e_1 ε Σ ,(add1 (term n))))]
+  [(interpret-stack (op v ... e_1 e ...) ε Σ n)
+   exception
+   (where exception (interpret-stack e_1 ε Σ ,(add1 (term n))))]
   ; begin
   [(interpret-stack (begin v ... e_1 e_2 e ...) ε Σ n)
    (interpret-stack (begin v ... v_1 e_2 e ...) ε Σ_1 n)
    (side-condition (not (redex-match? RC v (term e_1))))
    (where (v_1 Σ_1 n_1) (interpret-stack e_1 ε Σ ,(add1 (term n))))]
+  [(interpret-stack (begin v ... e_1 e_2 e ...) ε Σ n)
+   exception
+   (where exception (interpret-stack e_1 ε Σ ,(add1 (term n))))]
   [(interpret-stack (begin v ... e) ε Σ n) ; tail
    (interpret-stack e ε Σ n)]
   ; if
@@ -100,6 +113,9 @@
    (interpret-stack (let-values (((x_1) v_1) ... ((x) v) ((x_r) e_r) ...) e_body) ε Σ_1 n)
    (side-condition (not (redex-match? RC v (term e))))
    (where (v Σ_1 n_1) (interpret-stack e ε Σ ,(add1 (term n))))]
+  [(interpret-stack (let-values (((x_1) v_1) ... ((x) e) ((x_r) e_r) ...) e_body) ε Σ n)
+   exception
+   (where exception (interpret-stack e ε Σ ,(add1 (term n))))]
   ; letrec-values
   [(interpret-stack (letrec-values (((x) v) ...) v_body) ε Σ n) (v_body Σ n)]
   [(interpret-stack (letrec-values (((x) v) ...) e_body) ε Σ n)
@@ -122,9 +138,13 @@
    (interpret-stack ((closure x ... e_body ε_closure) v_args ... v_arg_1 e_args ...) ε Σ_1 n)
    (side-condition (not (redex-match? RC v (term e_arg_1))))
    (where (v_arg_1 Σ_1 n_1) (interpret-stack e_arg_1 ε Σ ,(add1 (term n))))]
+  [(interpret-stack ((closure x ... e_body ε_closure) v_args ... e_arg_1 e_args ...) ε Σ n)
+   exception
+   (where exception (interpret-stack e_arg_1 ε Σ ,(add1 (term n))))]
   [(interpret-stack (e_f e_args ...) ε Σ n)
    (interpret-stack (v_func e_args ...) ε Σ n)
    (where (v_func Σ_1 n_1) (interpret-stack e_f ε Σ ,(add1 (term n))))]
-
-  [(interpret-stack _ ε Σ n) (stuck Σ n)]
+  [(interpret-stack (e_f e_args ...) ε Σ n)
+   exception
+   (where exception (interpret-stack e_f ε Σ ,(add1 (term n))))]
   )
