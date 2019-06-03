@@ -59,64 +59,72 @@
 (define-metafunction RC
   eval-stackful : e -> rc-result
   [(eval-stackful e) rc-result
-                     (where (rc-result Σ) (interpret-stack e () ()))]
+                     (where (rc-result Σ n) (interpret-stack e () () 0))]
   [(eval-stackful _) stuck])
 
 (define-metafunction RC
-  interpret-stack : e ε Σ -> (rc-result Σ)
-  [(interpret-stack (raises e) ε Σ) (stuck Σ)] ; for intermediate errors
-  [(interpret-stack rc-result ε Σ) (rc-result Σ)]
-  [(interpret-stack x ε Σ) ((lookup Σ (lookup ε x)) Σ)]
-  [(interpret-stack (lambda (x ...) e) ε Σ) ((closure x ... e ε) Σ)]
-  [(interpret-stack (set! x e) ε Σ) ((void) (overwrite Σ_1 (lookup ε x) v))
-                                    (where (v Σ_1) (interpret-stack e ε Σ))]
-  [(interpret-stack (op v ...) ε Σ) ((δ (op v ...)) Σ)]
-  [(interpret-stack (op v ... e_1 e ...) ε Σ)
-   (interpret-stack (op v ... v_1 e ...) ε Σ_1)
+  ; (expr env store stack-depth) -> (result store stack-depth)
+  interpret-stack : e ε Σ n -> (rc-result Σ n)
+  [(interpret-stack (raises e) ε Σ n) (stuck Σ n)] ; for intermediate errors
+  [(interpret-stack rc-result ε Σ n) (rc-result Σ n)]
+  [(interpret-stack x ε Σ n) ((lookup Σ (lookup ε x)) Σ n)]
+  [(interpret-stack (lambda (x ...) e) ε Σ n) ((closure x ... e ε) Σ n)]
+  ; set!
+  [(interpret-stack (set! x e) ε Σ n)
+   ((void) (overwrite Σ_1 (lookup ε x) v) n)
+   (where (v Σ_1 n_1) (interpret-stack e ε Σ ,(add1 (term n))))]
+  ; op
+  [(interpret-stack (op v ...) ε Σ n) ((δ (op v ...)) Σ n)]
+  [(interpret-stack (op v ... e_1 e ...) ε Σ n)
+   (interpret-stack (op v ... v_1 e ...) ε Σ_1 n)
    (side-condition (not (redex-match? RC v (term e_1))))
-   (where (v_1 Σ_1) (interpret-stack e_1 ε Σ))]
-  [(interpret-stack (begin v ... v_1) ε Σ) (v_1 Σ)]
-  [(interpret-stack (begin v ... e_1 e ...) ε Σ)
-   (interpret-stack (begin v ... v_1 e ...) ε Σ_1)
+   (where (v_1 Σ_1 n_1) (interpret-stack e_1 ε Σ ,(add1 (term n))))]
+  ; begin
+  [(interpret-stack (begin v ... e_1 e_2 e ...) ε Σ n)
+   (interpret-stack (begin v ... v_1 e_2 e ...) ε Σ_1 n)
    (side-condition (not (redex-match? RC v (term e_1))))
-   (where (v_1 Σ_1) (interpret-stack e_1 ε Σ))]
+   (where (v_1 Σ_1 n_1) (interpret-stack e_1 ε Σ ,(add1 (term n))))]
+  [(interpret-stack (begin v ... e) ε Σ n) ; tail
+   (interpret-stack e ε Σ n)]
   ; if
-  [(interpret-stack (if e_test e_1 e_2) ε Σ)
+  [(interpret-stack (if e_test e_1 e_2) ε Σ n)
    ,(if (equal? (term v_1) (term true))
-        (term (interpret-stack e_1 ε Σ_1))
-        (term (interpret-stack e_2 ε Σ_1)))
-   (where (v_1 Σ_1) (interpret-stack e_test ε Σ))]
+        (term (interpret-stack e_1 ε Σ_1 n)) ;; tail
+        (term (interpret-stack e_2 ε Σ_1 n)))
+   (where (v_1 Σ_1 n_1) (interpret-stack e_test ε Σ n))]
   ; let-values
-  [(interpret-stack (let-values (((x) v) ...) v_body) ε Σ) (v_body Σ)]
-  [(interpret-stack (let-values (((x) v) ...) e_body) ε Σ)
-   (interpret-stack e_body (extend ε (x ...) (x_addr ...)) (extend Σ (x_addr ...) (v ...)))
-   (side-condition (not (redex-match? RC v (term e_body))))
-   (where (x_addr ...) ,(variables-not-in (term e_body) (term (x ...))))]
-  [(interpret-stack (let-values (((x_1) v_1) ... ((x) e) ((x_r) e_r) ...) e_body) ε Σ)
-   (interpret-stack (let-values (((x_1) v_1) ... ((x) v) ((x_r) e_r) ...) e_body) ε Σ_1)
+  [(interpret-stack (let-values (((x) v) ...) e_body) ε Σ n)
+   (interpret-stack e_body (extend ε (x ...) (x_addr ...)) (extend Σ (x_addr ...) (v ...)) n)
+   (where (x_addr ...) ,(variables-not-in (term e_body) (term (x ...))))] ; tail
+  [(interpret-stack (let-values (((x_1) v_1) ... ((x) e) ((x_r) e_r) ...) e_body) ε Σ n)
+   (interpret-stack (let-values (((x_1) v_1) ... ((x) v) ((x_r) e_r) ...) e_body) ε Σ_1 n)
    (side-condition (not (redex-match? RC v (term e))))
-   (where (v Σ_1) (interpret-stack e ε Σ))]
-  ; app
-  [(interpret-stack (x_func e ...) ε Σ)
-   (interpret-stack (v_func e ...) ε Σ)
-   (where v_func (lookup Σ (lookup ε x_func)))]
-  [(interpret-stack ((closure x ... e_body ε_closure) v_args ...) ε Σ)
-   (interpret-stack e_body (extend ε_closure (x ...) (x_addr ...)) (extend Σ (x_addr ...) (v_args ...)))
-   (where (x_addr ...) ,(variables-not-in (term e_body) (term (x ...))))]
-  [(interpret-stack ((closure x ... e_body ε_closure) v_args ... e_arg_1 e_args ...) ε Σ)
-   (interpret-stack ((closure x ... e_body ε_closure) v_args ... v_arg_1 e_args ...) ε Σ_1)
-   (side-condition (not (redex-match? RC v (term e_arg_1))))
-   (where (v_arg_1 Σ_1) (interpret-stack e_arg_1 ε Σ))]
+   (where (v Σ_1 n_1) (interpret-stack e ε Σ ,(add1 (term n))))]
   ; letrec-values
-  [(interpret-stack (letrec-values (((x) v) ...) v_body) ε Σ) (v_body Σ)]
-  [(interpret-stack (letrec-values (((x) v) ...) e_body) ε Σ)
-   (interpret-stack e_body (extend ε (x ...) (x_addr ...)) (extend Σ (x_addr ...) (v ...)))
+  [(interpret-stack (letrec-values (((x) v) ...) v_body) ε Σ n) (v_body Σ n)]
+  [(interpret-stack (letrec-values (((x) v) ...) e_body) ε Σ n)
+   (interpret-stack e_body (extend ε (x ...) (x_addr ...)) (extend Σ (x_addr ...) (v ...)) n)
    (side-condition (not (redex-match? RC v (term e_body))))
    (where (x_addr ...) ,(variables-not-in (term e_body) (term (x ...))))]
-  [(interpret-stack (letrec-values (((x_1) v_1) ... ((x) e) ((x_r) e_r) ...) e_body) ε Σ)
-   (interpret-stack (letrec-values (((x_1) v_1) ... ((x) v) ((x_r) e_r) ...) e_body) ε (extend Σ_1 (x_addr) (v)))
+  [(interpret-stack (letrec-values (((x_1) v_1) ... ((x) e) ((x_r) e_r) ...) e_body) ε Σ n)
+   (interpret-stack (letrec-values (((x_1) v_1) ... ((x) v) ((x_r) e_r) ...) e_body) ε (extend Σ_1 (x_addr) (v)) n)
    (side-condition (not (redex-match? RC v (term e))))
    (where x_addr ,(variable-not-in (term (e_body x_1 ... x x_r ...)) (term x)))
-   (where (v Σ_1) (interpret-stack e (extend ε (x) (x_addr)) Σ))]
-  [(interpret-stack _ ε Σ) (stuck Σ)]
+   (where (v Σ_1 n) (interpret-stack e (extend ε (x) (x_addr)) Σ n))]
+  ; app
+  [(interpret-stack (x_func e ...) ε Σ n)
+   (interpret-stack (v_func e ...) ε Σ n)
+   (where v_func (lookup Σ (lookup ε x_func)))]
+  [(interpret-stack ((closure x ... e_body ε_closure) v_args ...) ε Σ n)
+   (interpret-stack e_body (extend ε_closure (x ...) (x_addr ...)) (extend Σ (x_addr ...) (v_args ...)) n)
+   (where (x_addr ...) ,(variables-not-in (term e_body) (term (x ...))))]
+  [(interpret-stack ((closure x ... e_body ε_closure) v_args ... e_arg_1 e_args ...) ε Σ n)
+   (interpret-stack ((closure x ... e_body ε_closure) v_args ... v_arg_1 e_args ...) ε Σ_1 n)
+   (side-condition (not (redex-match? RC v (term e_arg_1))))
+   (where (v_arg_1 Σ_1 n_1) (interpret-stack e_arg_1 ε Σ ,(add1 (term n))))]
+  [(interpret-stack (e_f e_args ...) ε Σ n)
+   (interpret-stack (v_func e_args ...) ε Σ n)
+   (where (v_func Σ_1 n_1) (interpret-stack e_f ε Σ ,(add1 (term n))))]
+
+  [(interpret-stack _ ε Σ n) (stuck Σ n)]
   )
