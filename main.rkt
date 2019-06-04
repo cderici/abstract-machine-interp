@@ -101,9 +101,9 @@
    (interpret-stack e ρ Σ n)]
   ; if
   [(interpret-stack (if e_test e_1 e_2) ρ Σ n)
-   ,(if (equal? (term v_1) (term true))
-        (term (interpret-stack e_1 ρ Σ_1 n)) ;; tail
-        (term (interpret-stack e_2 ρ Σ_1 n)))
+   ,(if (equal? (term v_1) (term false))
+        (term (interpret-stack e_2 ρ Σ_1 n)) ;; tail
+        (term (interpret-stack e_1 ρ Σ_1 n)))
    (where (v_1 Σ_1 n_1) (interpret-stack e_test ρ Σ n))]
   ; let-values
   [(interpret-stack (let-values (((x) v) ...) e_body) ρ Σ n)
@@ -148,3 +148,39 @@
    exception
    (where exception (interpret-stack e_f ρ Σ ,(add1 (term n))))]
   )
+
+
+;;; CEK
+
+(define-extended-language CEK RC
+  [κ ::= (κ ...)
+     (if-κ e e) (arg-κ (v ...) (e ...) ρ)
+     (op-κ op (v ...) (e ...) ρ)])
+
+(define-metafunction CEK
+  eval-cek : e -> rc-result or exception
+  [(eval-cek e) (run-cek (e () () ()))])
+
+(define-metafunction CEK
+  run-cek : (e ρ Σ κ) -> rc-result or exception
+  [(run-cek (rc-result ρ () ())) rc-result]
+  [(run-cek any_1)
+   (run-cek (e_again ρ_again Σ_again κ_again))
+   (where ((e_again ρ_again Σ_again κ_again))
+          ,(apply-reduction-relation -->cek (term any_1)))]
+  [(run-cek any) stuck])
+
+(define -->cek
+  (reduction-relation
+   CEK
+   #:domain (e ρ Σ κ)
+   (--> [x ρ Σ κ]
+        [(lookup Σ (lookup ρ x)) ρ Σ κ])
+   ; op
+   (--> [v_1 ρ Σ ((op-κ op (v ...) (e_1 e ...) ρ_op) κ ...)]
+        [e_1 ρ_op Σ ((op-κ op (v_1 v ...) (e ...) ρ_op) κ ...)] op-switch)
+   (--> [v_1 ρ Σ ((op-κ op (v ...) () ρ) κ ...)]
+        [(δ (op v_1 v ...)) ρ Σ (κ ...)] op-apply)
+   (--> [(op e_1 e ...) ρ Σ (κ ...)]
+        [e_1 ρ Σ ((op-κ op () (e ...) ρ) κ ...)] op-push)
+   ))

@@ -59,3 +59,12 @@
                                                         (* n (fact (sub1 n)))))))
                                    (fact 5))))
             (term (stack-depth-exn 5)))
+
+
+;; CEK
+
+(test-equal (term (eval-cek 1)) 1)
+(test-equal (term (eval-cek true)) (term true))
+#;(test-->> -->cek (term [(+ 1 2) () () ()]) (term (1 () () ((op-κ + () (2) ())))))
+(test-equal (term (eval-cek (+ 1 2))) 3)
+(test-equal (term (eval-cek (+ 1 (+ 2 3)))) 6)
