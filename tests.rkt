@@ -68,3 +68,6 @@
 #;(test-->> -->cek (term [(+ 1 2) () () ()]) (term (1 () () ((op-κ + () (2) ())))))
 (test-equal (term (eval-cek (+ 1 2))) 3)
 (test-equal (term (eval-cek (+ 1 (+ 2 3)))) 6)
+(test-equal (term (eval-cek (if (< 2 3) 2 3))) 2)
+(test-equal (term (eval-cek (if (< 22 3) 2 3))) 3)
+#;(test-->> -->cek (term [(if (< 2 3) 2 3) () () ()]) (term (2 () () ())))
