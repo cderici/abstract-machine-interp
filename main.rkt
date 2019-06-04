@@ -162,50 +162,50 @@
 
 (define-metafunction CEK
   eval-cek : e -> rc-result or exception
-  [(eval-cek e) (run-cek (e () () ()))])
+  [(eval-cek e) (run-cek (e () ()))])
 
 (define-metafunction CEK
-  run-cek : (e ρ Σ κ) -> rc-result or exception
-  [(run-cek (rc-result ρ () ())) rc-result]
+  run-cek : (e ρ κ) -> rc-result or exception
+  [(run-cek (rc-result ρ ())) rc-result]
   [(run-cek any_1)
-   (run-cek (e_again ρ_again Σ_again κ_again))
-   (where ((e_again ρ_again Σ_again κ_again))
+   (run-cek (e_again ρ_again κ_again))
+   (where ((e_again ρ_again κ_again))
           ,(apply-reduction-relation -->cek (term any_1)))]
   [(run-cek any) stuck])
 
 (define -->cek
   (reduction-relation
    CEK
-   #:domain (e ρ Σ κ)
-   (--> [x ρ Σ κ] [(lookup Σ (lookup ρ x)) ρ Σ κ] lookup)
-   (--> [(lambda (x ...) e) ρ Σ κ] [(closure x ... e ρ) ρ Σ κ] closure)
+   #:domain (e ρ κ)
+   (--> [x ρ κ] [(lookup ρ x) ρ κ] lookup)
+   (--> [(lambda (x ...) e) ρ κ] [(closure x ... e ρ) ρ κ] closure)
    ; plug
-   (--> [v_1 ρ Σ ((op-κ op (v ...) () ρ) κ ...)]
-        [(δ (op v ... v_1)) ρ Σ (κ ...)] op-plug)
-   (--> [v ρ Σ ((if-κ e_1 e_2) κ ...)]
-        [e ρ Σ (κ ...)]
+   (--> [v_1 ρ ((op-κ op (v ...) () ρ) κ ...)]
+        [(δ (op v ... v_1)) ρ (κ ...)] op-plug)
+   (--> [v ρ ((if-κ e_1 e_2) κ ...)]
+        [e ρ (κ ...)]
         (where e ,(if (equal? (term v) (term false)) (term e_2) (term e_1)))
         if-true-plug)
-   (--> [v ρ Σ ((set-κ x) κ ...)]
-        [(void) ρ (overwrite Σ_1 (lookup ρ x) v) (κ ...)] set-plug)
-   (--> [v ρ Σ ((seq-κ e) κ ...)]
-        [e ρ Σ (κ ...)] begin-plug)
+   (--> [v ρ ((set-κ x) κ ...)]
+        [(void) (overwrite ρ x v) (κ ...)] set-plug)
+   (--> [v ρ ((seq-κ e) κ ...)]
+        [e ρ (κ ...)] begin-plug)
    ; op
-   (--> [v_1 ρ Σ ((op-κ op (v ...) (e_1 e ...) ρ_op) κ ...)]
-        [e_1 ρ_op Σ ((op-κ op (v ... v_1) (e ...) ρ_op) κ ...)] op-switch)
-   (--> [(op e_1 e ...) ρ Σ (κ ...)]
-        [e_1 ρ Σ ((op-κ op () (e ...) ρ) κ ...)] op-push)
+   (--> [v_1 ρ ((op-κ op (v ...) (e_1 e ...) ρ_op) κ ...)]
+        [e_1 ρ_op ((op-κ op (v ... v_1) (e ...) ρ_op) κ ...)] op-switch)
+   (--> [(op e_1 e ...) ρ (κ ...)]
+        [e_1 ρ ((op-κ op () (e ...) ρ) κ ...)] op-push)
    ; if
-   (--> [(if e_test e_1 e_2) ρ Σ (κ ...)]
-        [e_test ρ Σ ((if-κ e_1 e_2) κ ...)] if-push)
+   (--> [(if e_test e_1 e_2) ρ (κ ...)]
+        [e_test ρ ((if-κ e_1 e_2) κ ...)] if-push)
    ; set!
-   (--> [(set! x e) ρ Σ (κ ...)]
-        [e ρ Σ ((set-κ x) κ ...)] set-push)
+   (--> [(set! x e) ρ (κ ...)]
+        [e ρ ((set-κ x) κ ...)] set-push)
    ; begin
-   (--> [(begin e_1 e ...) ρ Σ (κ ...)]
-        [e_1 ρ Σ ((seq-κ e ...) κ ...)] begin-push)
-   (--> [v ρ Σ ((seq-κ e_1 e ...) κ ...)]
-        [e_1 ρ Σ ((seq-κ e_1 e ...) κ ...)] begin-switch)
+   (--> [(begin e_1 e ...) ρ (κ ...)]
+        [e_1 ρ ((seq-κ e ...) κ ...)] begin-push)
+   (--> [v ρ ((seq-κ e_1 e ...) κ ...)]
+        [e_1 ρ ((seq-κ e_1 e ...) κ ...)] begin-switch)
 
 
 
