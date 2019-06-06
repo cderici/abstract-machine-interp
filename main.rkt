@@ -158,7 +158,8 @@
      (arg-κ (v ...) (e ...) ρ)
      (set-κ x)
      (seq-κ e ...)
-     (op-κ op (v ...) (e ...) ρ)])
+     (op-κ op (v ...) (e ...) ρ)
+     (let-κ (((x) e) ...) (x ...) (v ...) e ρ)])
 
 (define-metafunction CEK
   eval-cek : e -> rc-result or exception
@@ -180,8 +181,8 @@
    (--> [x ρ κ] [(lookup ρ x) ρ κ] lookup)
    (--> [(lambda (x ...) e) ρ κ] [(closure x ... e ρ) ρ κ] closure)
    ; plug
-   (--> [v_1 ρ ((op-κ op (v ...) () ρ) κ ...)]
-        [(δ (op v ... v_1)) ρ (κ ...)] op-plug)
+   (--> [v_1 ρ ((op-κ op (v ...) () ρ_op) κ ...)]
+        [(δ (op v ... v_1)) ρ_op (κ ...)] op-plug)
    (--> [v ρ ((if-κ e_1 e_2) κ ...)]
         [e ρ (κ ...)]
         (where e ,(if (equal? (term v) (term false)) (term e_2) (term e_1)))
@@ -190,6 +191,8 @@
         [(void) (overwrite ρ x v) (κ ...)] set-plug)
    (--> [v ρ ((seq-κ e) κ ...)]
         [e ρ (κ ...)] begin-plug)
+   (--> [v ρ ((let-κ () (x_rhs ...) (v_rhs ...) e_body ρ_let) κ ...)]
+        [e_body (extend ρ_let (x_rhs ...) (v v_rhs ...)) (κ ...)] let-plug)
    ; op
    (--> [v_1 ρ ((op-κ op (v ...) (e_1 e ...) ρ_op) κ ...)]
         [e_1 ρ_op ((op-κ op (v ... v_1) (e ...) ρ_op) κ ...)] op-switch)
@@ -206,7 +209,14 @@
         [e_1 ρ ((seq-κ e ...) κ ...)] begin-push)
    (--> [v ρ ((seq-κ e_1 e ...) κ ...)]
         [e_1 ρ ((seq-κ e_1 e ...) κ ...)] begin-switch)
-
+   ; let-values
+   (--> [v_rhs ρ ((let-κ (((x_1) e_rhs_next) ((x_2) e_2) ...)
+                         (x ...) (v ...) e_body ρ_let) κ ...)]
+        [e_rhs_next ρ_let ((let-κ (((x_2) e_2) ...)
+                                  (x_1 x ...) (v_rhs v ...) e_body ρ_let) κ ...)]
+        let-rhs-switch)
+   (--> [(let-values (((x_rhs) e_rhs) ((x_2) e_2) ...) e_body) ρ (κ ...)]
+        [e_rhs ρ ((let-κ (((x_2) e_2) ...) (x_rhs) () e_body ρ) κ ...)] let-push)
 
 
    ))

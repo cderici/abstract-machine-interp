@@ -71,3 +71,6 @@
 (test-equal (term (eval-cek (if (< 2 3) 2 3))) 2)
 (test-equal (term (eval-cek (if (< 22 3) 2 3))) 3)
 #;(test-->> -->cek (term [(if (< 2 3) 2 3) () () ()]) (term (2 () () ())))
+(test-equal (term (eval-cek (let-values (((a) 1)) 3))) 3)
+(test-equal (term (eval-cek (let-values (((a) 1) ((b) 2)) b))) 2)
+(test-equal (term (eval-cek (let-values (((a) (+ 1 2))) a))) 3)
