@@ -153,6 +153,7 @@
 ;;; CEK
 
 (define-extended-language CEK RC
+  [e ::= .... stuck]
   [κ ::= (κ ...)
      (if-κ e e)
      (arg-κ (e ...))
@@ -192,9 +193,7 @@
         (where e ,(if (equal? (term v) (term false)) (term e_2) (term e_1)))
         if-true-plug)
    (--> [v ρ Σ ((set-κ x) κ ...)]
-        [(void) (overwrite Σ x v) (κ ...)] set-plug)
-   (--> [v ρ Σ ((seq-κ e) κ ...)]
-        [e ρ Σ (κ ...)] begin-plug)
+        [(void) ρ (overwrite Σ x v) (κ ...)] set-plug)
    (--> [v ρ Σ ((let-κ () (x_rhs ...) (v_rhs ...) e_body) κ ...)]
         [e_body (extend ρ (x_rhs ...) (x_addr ...))
                 (extend Σ (x_addr ...) (v v_rhs ...)) (κ ...)]
@@ -214,12 +213,14 @@
         [e_test ρ Σ ((if-κ e_1 e_2) κ ...)] if-push)
    ; set!
    (--> [(set! x e) ρ Σ (κ ...)]
-        [e ρ Σ ((set-κ (lookup x ρ)) κ ...)] set-push)
+        [e ρ Σ ((set-κ (lookup ρ x)) κ ...)] set-push)
    ; begin
    (--> [(begin e_1 e ...) ρ Σ (κ ...)]
         [e_1 ρ Σ ((seq-κ e ...) κ ...)] begin-push)
    (--> [v ρ Σ ((seq-κ e_1 e ...) κ ...)]
-        [e_1 ρ Σ ((seq-κ e_1 e ...) κ ...)] begin-switch)
+        [e_1 ρ Σ ((seq-κ e ...) κ ...)] begin-switch)
+   (--> [v ρ Σ ((seq-κ) κ ...)]
+        [v ρ Σ (κ ...)] begin-plug)
    ; let-values
    (--> [v_rhs ρ Σ ((let-κ (((x_1) e_rhs_next) ((x_2) e_2) ...)
                            (x ...) (v ...) e_body) κ ...)]
