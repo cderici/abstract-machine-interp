@@ -46,9 +46,18 @@
 (term (test-both (letrec-values (((fact) (lambda (n) (if (< n 1) 1 (* n (fact (sub1 n)))))))
                                    (fact 5)) 120))
 (term (test-both ((lambda (x) x) 3) 3))
+(term (test-both (raises 1) stuck))
 
+(test-equal (term (eval-cek (+ 1 (convert-to-stackful (+ 2 3))))) 6)
+(test-equal (term (eval-cek (let-values (((a) (convert-to-stackful (+ 1 2)))) a))) 3)
+(test-equal (term (eval-cek (let-values (((a) 3)) (convert-to-stackful (let-values (((b) 1)) (+ a b)))))) 4)
+(test-equal (term (eval-cek (let-values (((a) 3)) (begin (convert-to-stackful (set! a 5)) a)))) 5)
 
-(test-equal (term (eval-stackful (raises 1))) (term stuck))
+(test-equal (term (eval-stackful (+ 1 (convert-to-cek (+ 2 3))))) 6)
+(test-equal (term (eval-stackful (let-values (((a) (convert-to-cek (+ 1 2)))) a))) 3)
+(test-equal (term (eval-stackful (let-values (((a) 3)) (convert-to-cek (let-values (((b) 1)) (+ a b)))))) 4)
+(test-equal (term (eval-stackful (let-values (((a) 3)) (begin (convert-to-cek (set! a 5)) a)))) 5)
+
 (test-equal (term (interpret-stack a ((a s0) (b s1)) ((s0 1) (s1 2)) 0)) (term (1 ((s0 1) (s1 2)) 0)))
 (test-equal (term (interpret-stack (+ 1 5) () () 0)) (term (6 () 0)))
 (test-equal (term (interpret-stack (+ 1 5 (+ 2 3)) () () 0)) (term (11 () 0)))

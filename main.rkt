@@ -10,7 +10,7 @@
        (lambda (x_!_ ...) e)
        (let-values (((x_!_) e) ...) e)
        (letrec-values (((x_!_) e) ...) e)
-       (raises e) (raise-depth)] ;; expressiosn
+       (raises e) (raise-depth) (convert-to-stackful e) (convert-to-cek e)] ;; expressiosn
   [v   ::= n b c (void)] ;; values
   [c   ::= (closure x ... e ρ)]
   [n   ::= number]
@@ -21,7 +21,8 @@
   [ρ   ::= ((x any) ...)] ;; environment
   [Σ   ::= ((x any) ...)] ;; store
 
-  [exception ::= (stack-depth-exn n)]
+  ;[convert ::= (convert-stack e)]
+  [exception ::= (stack-depth-exn n) (convert-to-cek-exn e ρ Σ)]
   [rc-result ::= v stuck]
 
   #:binding-forms
@@ -66,10 +67,21 @@
   [(eval-stackful _) stuck])
 
 (define-metafunction RC
+  dynamic-eval-stackful : e ρ Σ -> (rc-result Σ) or exception
+  [(dynamic-eval-stackful e ρ Σ) (rc-result Σ_new)
+                                 (where (rc-result Σ_new n_new) (interpret-stack e ρ Σ 0))]
+  [(dynamic-eval-stackful e ρ Σ) exception
+                                 (where exception (interpret-stack e ρ Σ 0))]
+  [(dynamic-eval-stackful _ ρ Σ) (stuck Σ)])
+
+(define-metafunction RC
   ; (expr env store stack-depth) -> (result store stack-depth)
   interpret-stack : e ρ Σ n -> (rc-result Σ n) or exception
   [(interpret-stack (raises e) ρ Σ n) (stuck Σ n)] ; for intermediate errors
   [(interpret-stack (raise-depth) ρ Σ n) (stack-depth-exn n)]
+  [(interpret-stack (convert-to-cek e) ρ Σ n)
+   (rc-result Σ_new n)
+   (where (rc-result Σ_new) (run-cek (e ρ Σ ())))]
   [(interpret-stack rc-result ρ Σ n) (rc-result Σ n)]
   [(interpret-stack x ρ Σ n) ((lookup Σ (lookup ρ x)) Σ n)]
   [(interpret-stack (lambda (x ...) e) ρ Σ n) ((closure x ... e ρ) Σ n)]
@@ -166,16 +178,23 @@
 
 (define-metafunction CEK
   eval-cek : e -> rc-result or exception
-  [(eval-cek e) (run-cek (e () () ()))])
+  [(eval-cek e) rc-result
+                (where (rc-result Σ) (run-cek (e () () ())))]
+  [(eval-cek e) exception
+                (where exception (run-cek (e () () ())))])
 
 (define-metafunction CEK
-  run-cek : (e ρ Σ κ) -> rc-result or exception
-  [(run-cek (rc-result ρ Σ ())) rc-result]
+  run-cek : (e ρ Σ κ) -> (rc-result Σ) or exception
+  [(run-cek (rc-result ρ Σ ())) (rc-result Σ)]
+  [(run-cek ((convert-to-stackful e) ρ Σ κ))
+   (run-cek (e_again ρ Σ_again κ))
+   (where (e_again Σ_again)
+          (dynamic-eval-stackful e ρ Σ))]
   [(run-cek any_1)
    (run-cek (e_again ρ_again Σ_again κ_again))
    (where ((e_again ρ_again Σ_again κ_again))
           ,(apply-reduction-relation -->cek (term any_1)))]
-  [(run-cek any) stuck])
+  [(run-cek any) (stuck ())])
 
 (define -->cek
   (reduction-relation
