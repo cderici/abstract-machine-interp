@@ -10,7 +10,8 @@
        (lambda (x_!_ ...) e)
        (let-values (((x_!_) e) ...) e)
        (letrec-values (((x_!_) e) ...) e)
-       (raises e) (raise-depth) (convert-to-stackful e) (convert-to-cek e)] ;; expressiosn
+       (raises e) (raise-depth)
+       convert] ;; expressiosn
   [v   ::= n b c (void)] ;; values
   [c   ::= (closure x ... e ρ)]
   [n   ::= number]
@@ -21,7 +22,7 @@
   [ρ   ::= ((x any) ...)] ;; environment
   [Σ   ::= ((x any) ...)] ;; store
 
-  ;[convert ::= (convert-stack e)]
+  [convert ::= (convert-to-stackful e) (convert-to-cek e)]
   [exception ::= (stack-depth-exn n) (convert-to-cek-exn e ρ Σ)]
   [rc-result ::= v stuck]
 
@@ -79,8 +80,17 @@
   interpret-stack : e ρ Σ n -> (rc-result Σ n) or exception
   [(interpret-stack (raises e) ρ Σ n) (stuck Σ n)] ; for intermediate errors
   [(interpret-stack (raise-depth) ρ Σ n) (stack-depth-exn n)]
+  [(interpret-stack e ρ Σ n)
+   (interpret-stack (convert-to-cek e) ρ Σ n)
+   (side-condition (and (not (redex-match? RC convert (term e)))
+                        (not (redex-match? RC x (term e)))
+                        (not (redex-match? RC v (term e)))
+                        (>= (term n) 10)))] ; stack overflow
   [(interpret-stack (convert-to-cek e) ρ Σ n)
    (rc-result Σ_new n)
+   (side-condition (begin (when (>= (term n) 10)
+                            (printf "overflow converting to cek for ~a\n" (term e)))
+                          #t))
    (where (rc-result Σ_new) (run-cek (e ρ Σ ())))]
   [(interpret-stack rc-result ρ Σ n) (rc-result Σ n)]
   [(interpret-stack x ρ Σ n) ((lookup Σ (lookup ρ x)) Σ n)]
