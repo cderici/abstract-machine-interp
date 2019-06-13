@@ -10,8 +10,8 @@
        (lambda (x_!_ ...) e)
        (let-values (((x_!_) e) ...) e)
        (letrec-values (((x_!_) e) ...) e)
-       (raises e) (raise-depth)
-       convert] ;; expressiosn
+       (raises e) (raise-depth) (convert-stack e)
+       convert stuck] ;; expressiosn
   [v   ::= n b c (void)] ;; values
   [c   ::= (closure x ... e ρ)]
   [n   ::= number]
@@ -22,9 +22,20 @@
   [ρ   ::= ((x any) ...)] ;; environment
   [Σ   ::= ((x any) ...)] ;; store
 
-  [convert ::= (convert-to-stackful e) (convert-to-cek e)]
+  [convert ::= (convert-to-stackful e) (convert-to-cek e)
+           (convert-stack-to-heap e ρ Σ κ)]
   [exception ::= (stack-depth-exn n) (convert-to-cek-exn e ρ Σ)]
   [rc-result ::= v stuck]
+
+  [κ ::= (κ ...)
+     (if-κ e e)
+     (arg-κ (e ...))
+     (fun-κ c (e ...) (v ...))
+     (set-κ x)
+     (seq-κ e ...)
+     (op-κ op (v ...) (e ...) ρ)
+     (let-κ (((x) e) ...) (x ...) (v ...) e)
+     (letrec-κ (((x) e) ...) (x ...) (cell ...) (v ...) e)]
 
   #:binding-forms
   (λ (x ...) e #:refers-to (shadow x ...))
@@ -60,11 +71,23 @@
   [(lookup ((x any) ...) _) stuck])
 
 (define-metafunction RC
+  reverse-lookup : ((x any) ...) v -> any
+  [(reverse-lookup ((x_1 v_1) ... (x_t v_t) (x_2 v_2) ...) v_t)
+   x_t
+   (side-condition (not (member (term v_t) (term (v_1 ...)))))]
+  [(reverse-lookup ((x any) ...) _) stuck])
+
+(define-metafunction RC
   eval-stackful : e -> rc-result or exception
   [(eval-stackful e) rc-result
                      (where (rc-result Σ n) (interpret-stack e () () 0))]
   [(eval-stackful e) exception
                      (where exception (interpret-stack e () () 0))]
+  [(eval-stackful e)
+   rc-result_cek
+   (where (convert-stack-to-heap e_ast ρ_ast Σ_ast (κ ...))
+          (interpret-stack e () () 0))
+   (where (rc-result_cek Σ_cek) (run-cek (e_ast ρ_ast Σ_ast (κ ...))))]
   [(eval-stackful _) stuck])
 
 (define-metafunction RC
@@ -77,21 +100,76 @@
 
 (define-metafunction RC
   ; (expr env store stack-depth) -> (result store stack-depth)
-  interpret-stack : e ρ Σ n -> (rc-result Σ n) or exception
+  interpret-stack : e ρ Σ n -> (rc-result Σ n) or exception or convert
   [(interpret-stack (raises e) ρ Σ n) (stuck Σ n)] ; for intermediate errors
   [(interpret-stack (raise-depth) ρ Σ n) (stack-depth-exn n)]
+  ; stack overflow
   [(interpret-stack e ρ Σ n)
-   (interpret-stack (convert-to-cek e) ρ Σ n)
-   (side-condition (and (not (redex-match? RC convert (term e)))
-                        (not (redex-match? RC x (term e)))
-                        (not (redex-match? RC v (term e)))
-                        (>= (term n) 10)))] ; stack overflow
+   (rc-result Σ_new n)
+   (side-condition
+    (and (not (redex-match? RC convert (term e)))
+         (not (redex-match? RC x (term e)))
+         (not (redex-match? RC v (term e)))
+         (>= (term n) 10)
+         (begin (printf "overflow converting to cek for ~a -- n : ~a\n" (term e) (term n)) #t)))
+   (where (rc-result Σ_new) (run-cek (e ρ Σ ())))]
+  ; convert to cek (for a single expression)
   [(interpret-stack (convert-to-cek e) ρ Σ n)
    (rc-result Σ_new n)
-   (side-condition (begin (when (>= (term n) 10)
-                            (printf "overflow converting to cek for ~a\n" (term e)))
-                          #t))
    (where (rc-result Σ_new) (run-cek (e ρ Σ ())))]
+
+  ; convert to heap
+  [(interpret-stack (convert-stack e) ρ Σ n) (convert-stack-to-heap e ρ Σ ())]
+  ; if
+  [(interpret-stack (if e_test e_1 e_2) ρ Σ n)
+   (convert-stack-to-heap e_ast ρ_ast Σ_ast (κ ... (if-κ e_1 e_2)))
+   (where (convert-stack-to-heap e_ast ρ_ast Σ_ast (κ ...))
+          (interpret-stack e_test ρ Σ ,(add1 (term n))))]
+  ; op
+  [(interpret-stack (op v ... e_1 e ...) ρ Σ n)
+   (convert-stack-to-heap e_ast ρ_ast Σ_ast (κ ... (op-κ op (v ...) (e ...) ρ)))
+   (where (convert-stack-to-heap e_ast ρ_ast Σ_ast (κ ...))
+          (interpret-stack e_1 ρ Σ ,(add1 (term n))))]
+  ; set!
+  [(interpret-stack (set! x e) ρ Σ n)
+   (convert-stack-to-heap e_ast ρ_ast Σ_ast (κ ... (set-κ (lookup ρ x))))
+   (where (convert-stack-to-heap e_ast ρ_ast Σ_ast (κ ...))
+          (interpret-stack e ρ Σ ,(add1 (term n))))]
+  ; begin
+  [(interpret-stack (begin v ... e_1 e_2 e ...) ρ Σ n)
+   (convert-stack-to-heap e_ast ρ_ast Σ_ast (κ ... (seq-κ e_2 e ...)))
+   (where (convert-stack-to-heap e_ast ρ_ast Σ_ast (κ ...))
+          (interpret-stack e_1 ρ Σ ,(add1 (term n))))]
+  ; let-values
+  [(interpret-stack (let-values (((x_1) v_1) ... ((x) e) ((x_r) e_r) ...) e_body) ρ Σ n)
+   (convert-stack-to-heap e_ast ρ_ast Σ_ast
+                          (κ ... (let-κ (((x_r) e_r) ...)
+                                        (x_1 ... x) (v_1 ...) e_body)))
+   (where (convert-stack-to-heap e_ast ρ_ast Σ_ast (κ ...))
+          (interpret-stack e ρ Σ ,(add1 (term n))))]
+  ; letrec-values
+  [(interpret-stack (letrec-values (((x_1) v_1) ... ((x) e) ((x_r) e_r) ...) e_body) ρ Σ n)
+   (convert-stack-to-heap e_ast ρ_ast Σ_ast
+                          (κ ...
+                             (letrec-κ (((x_r) e_r) ...)
+                                       (x x_1 ...)
+                                       (cell_addr (reverse-lookup Σ_ast v_1) ...) (v_1 ...)
+                                       e_body)))
+   (where cell_addr ,(variable-not-in (term (e_body x_1 ... x x_r ...)) (term x)))
+   (where (convert-stack-to-heap e_ast ρ_ast Σ_ast (κ ...))
+          (interpret-stack e (extend ρ (x) (cell_addr)) Σ ,(add1 (term n))))]
+  ; app
+  [(interpret-stack ((closure x ... e_body ρ_closure) v_args ... e_arg_1 e_args ...) ρ Σ n)
+   (convert-stack-to-heap e_ast ρ_ast Σ_ast
+                          (κ ... (fun-κ (closure x ... e_body ρ_closure) (e_args ...) (v_args ...))))
+   (where (convert-stack-to-heap e_ast ρ_ast Σ_ast (κ ...))
+          (interpret-stack e_arg_1 ρ Σ ,(add1 (term n))))]
+  [(interpret-stack (e_f e_args ...) ρ Σ n)
+   (convert-stack-to-heap e_ast ρ_ast Σ_ast (κ ... (arg-κ (e_args ...))))
+   (where (convert-stack-to-heap e_ast ρ_ast Σ_ast (κ ...))
+          (interpret-stack e_f ρ Σ ,(add1 (term n))))]
+
+
   [(interpret-stack rc-result ρ Σ n) (rc-result Σ n)]
   [(interpret-stack x ρ Σ n) ((lookup Σ (lookup ρ x)) Σ n)]
   [(interpret-stack (lambda (x ...) e) ρ Σ n) ((closure x ... e ρ) Σ n)]
@@ -129,8 +207,8 @@
    (where (v_1 Σ_1 n_1) (interpret-stack e_test ρ Σ n))]
   ; let-values
   [(interpret-stack (let-values (((x) v) ...) e_body) ρ Σ n)
-   (interpret-stack e_body (extend ρ (x ...) (x_addr ...)) (extend Σ (x_addr ...) (v ...)) n)
-   (where (x_addr ...) ,(variables-not-in (term e_body) (term (x ...))))] ; tail
+   (interpret-stack e_body (extend ρ (x ...) (cell_addr ...)) (extend Σ (cell_addr ...) (v ...)) n)
+   (where (cell_addr ...) ,(variables-not-in (term e_body) (term (x ...))))] ; tail
   [(interpret-stack (let-values (((x_1) v_1) ... ((x) e) ((x_r) e_r) ...) e_body) ρ Σ n)
    (interpret-stack (let-values (((x_1) v_1) ... ((x) v) ((x_r) e_r) ...) e_body) ρ Σ_1 n)
    (side-condition (not (redex-match? RC v (term e))))
@@ -141,21 +219,27 @@
   ; letrec-values
   [(interpret-stack (letrec-values (((x) v) ...) v_body) ρ Σ n) (v_body Σ n)]
   [(interpret-stack (letrec-values (((x) v) ...) e_body) ρ Σ n)
-   (interpret-stack e_body (extend ρ (x ...) (x_addr ...)) (extend Σ (x_addr ...) (v ...)) n)
+   (interpret-stack e_body (extend ρ (x ...) (cell_addr ...)) (extend Σ (cell_addr ...) (v ...)) n)
    (side-condition (not (redex-match? RC v (term e_body))))
-   (where (x_addr ...) ,(variables-not-in (term e_body) (term (x ...))))]
+   (where (cell_addr ...) ,(variables-not-in (term e_body) (term (x ...))))]
+
   [(interpret-stack (letrec-values (((x_1) v_1) ... ((x) e) ((x_r) e_r) ...) e_body) ρ Σ n)
-   (interpret-stack (letrec-values (((x_1) v_1) ... ((x) v) ((x_r) e_r) ...) e_body) ρ (extend Σ_1 (x_addr) (v)) n)
+   (interpret-stack (letrec-values (((x_1) v_1) ... ((x) v) ((x_r) e_r) ...) e_body) ρ (extend Σ_1 (cell_addr) (v)) n)
    (side-condition (not (redex-match? RC v (term e))))
-   (where x_addr ,(variable-not-in (term (e_body x_1 ... x x_r ...)) (term x)))
-   (where (v Σ_1 n) (interpret-stack e (extend ρ (x) (x_addr)) Σ n))]
+   (where cell_addr ,(variable-not-in (term (e_body x_1 ... x x_r ...)) (term x)))
+   (where (v Σ_1 n_1) (interpret-stack e (extend ρ (x) (cell_addr)) Σ ,(add1 (term n))))]
+
+  [(interpret-stack (letrec-values (((x_1) v_1) ... ((x) e) ((x_r) e_r) ...) e_body) ρ Σ n)
+   exception
+   (where cell_addr ,(variable-not-in (term (e_body x_1 ... x x_r ...)) (term x)))
+   (where exception (interpret-stack e (extend ρ (x) (cell_addr)) Σ ,(add1 (term n))))]
   ; app
   [(interpret-stack (x_func e ...) ρ Σ n)
    (interpret-stack (v_func e ...) ρ Σ n)
    (where v_func (lookup Σ (lookup ρ x_func)))]
   [(interpret-stack ((closure x ... e_body ρ_closure) v_args ...) ρ Σ n)
-   (interpret-stack e_body (extend ρ_closure (x ...) (x_addr ...)) (extend Σ (x_addr ...) (v_args ...)) n)
-   (where (x_addr ...) ,(variables-not-in (term e_body) (term (x ...))))]
+   (interpret-stack e_body (extend ρ_closure (x ...) (cell_addr ...)) (extend Σ (cell_addr ...) (v_args ...)) n)
+   (where (cell_addr ...) ,(variables-not-in (term e_body) (term (x ...))))]
   [(interpret-stack ((closure x ... e_body ρ_closure) v_args ... e_arg_1 e_args ...) ρ Σ n)
    (interpret-stack ((closure x ... e_body ρ_closure) v_args ... v_arg_1 e_args ...) ρ Σ_1 n)
    (side-condition (not (redex-match? RC v (term e_arg_1))))
@@ -174,7 +258,7 @@
 
 ;;; CEK
 
-(define-extended-language CEK RC
+#;(define-extended-language CEK RC
   [e ::= .... stuck]
   [κ ::= (κ ...)
      (if-κ e e)
@@ -186,14 +270,14 @@
      (let-κ (((x) e) ...) (x ...) (v ...) e)
      (letrec-κ (((x) e) ...) (x ...) (cell ...) (v ...) e)])
 
-(define-metafunction CEK
+(define-metafunction RC
   eval-cek : e -> rc-result or exception
   [(eval-cek e) rc-result
                 (where (rc-result Σ) (run-cek (e () () ())))]
   [(eval-cek e) exception
                 (where exception (run-cek (e () () ())))])
 
-(define-metafunction CEK
+(define-metafunction RC
   run-cek : (e ρ Σ κ) -> (rc-result Σ) or exception
   [(run-cek (rc-result ρ Σ ())) (rc-result Σ)]
   [(run-cek ((convert-to-stackful e) ρ Σ κ))
@@ -208,7 +292,7 @@
 
 (define -->cek
   (reduction-relation
-   CEK
+   RC
    #:domain (e ρ Σ κ)
    ;; this is CESK-like, but only reason for store is to implement
    ;; letrec (we don't have cells)
@@ -224,9 +308,9 @@
    (--> [v ρ Σ ((set-κ x) κ ...)]
         [(void) ρ (overwrite Σ x v) (κ ...)] set-plug)
    (--> [v ρ Σ ((let-κ () (x_rhs ...) (v_rhs ...) e_body) κ ...)]
-        [e_body (extend ρ (x_rhs ...) (x_addr ...))
-                (extend Σ (x_addr ...) (v v_rhs ...)) (κ ...)]
-        (where (x_addr ...) ,(variables-not-in (term e_body) (term (x_rhs ...)))) let-plug)
+        [e_body (extend ρ (x_rhs ...) (cell_addr ...))
+                (extend Σ (cell_addr ...) (v v_rhs ...)) (κ ...)]
+        (where (cell_addr ...) ,(variables-not-in (term e_body) (term (x_rhs ...)))) let-plug)
    (--> [v ρ Σ ((letrec-κ () (x_rhs ...) (cell_rhs ...) (v_rhs ...) e_body) κ ...)]
         [e_body (extend ρ (x_rhs ...) (cell_rhs ...))
                 (extend Σ (cell_rhs ...) (v v_rhs ...))
@@ -281,12 +365,12 @@
    (--> [(closure x ... e_body ρ_closure) ρ Σ ((arg-κ ()) κ ...)]
         [e_body ρ_closure Σ (κ ...)] app-no-rand-plug)
    (--> [v_closure ρ Σ ((arg-κ (e_rand_1 e_rands ...)) κ ...)]
-        [e_rand_1 ρ Σ ((fun-κ v_closure (e_rand_1 e_rands ...) ()) κ ...)] app-rand-push)
+        [e_rand_1 ρ Σ ((fun-κ v_closure (e_rands ...) ()) κ ...)] app-rand-push)
    (--> [v_rand ρ Σ ((fun-κ v_closure (e_rand_1 e_rands ...) (v ...)) κ ...)]
-        [e_rand_1 ρ Σ ((fun-κ v_closure (e_rands ...) (v_rand v ...)) κ ...)] app-rand-switch)
+        [e_rand_1 ρ Σ ((fun-κ v_closure (e_rands ...) (v ... v_rand)) κ ...)] app-rand-switch)
    (--> [v_rand ρ Σ ((fun-κ (closure x ... e_body ρ_closure) () (v ...)) κ ...)]
-        [e_body (extend ρ_closure (x ...) (x_addr ...)) (extend Σ (x_addr ...) (v ...))
+        [e_body (extend ρ_closure (x ...) (cell_addr ...)) (extend Σ (cell_addr ...) (v ... v_rand))
                 (κ ...)]
-        (where (x_addr ...) ,(variables-not-in (term e_body) (term (x ...)))) app-plug)
+        (where (cell_addr ...) ,(variables-not-in (term e_body) (term (x ...)))) app-plug)
 
    ))

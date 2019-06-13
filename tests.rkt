@@ -2,7 +2,7 @@
 
 (require redex "main.rkt")
 
-(define-metafunction CEK
+(define-metafunction RC
   test-both : e rc-result -> any
   [(test-both e rc-result_expected)
    ,(begin (test-equal (term (eval-stackful e)) (term (eval-cek e)))
@@ -64,7 +64,39 @@
 (test-equal (term (eval-stackful (letrec-values (((fact) (lambda (n) (if (< n 1) 1 (* n (fact (sub1 n)))))))
                                    (fact 20)))) 2432902008176640000)
 
+;; convert stack to heap
 
+(test-equal (term (eval-stackful (convert-stack (+ 1 2)))) 3)
+
+(test-equal (term (interpret-stack (convert-stack (< 1 2)) () () 0))
+            (term (convert-stack-to-heap (< 1 2) () () ())))
+(test-equal (term (interpret-stack (if (< 1 2) 3 4) () () 0)) (term (3 () 0)))
+(test-equal (term (interpret-stack (if (convert-stack (< 1 2)) 3 4) () () 0))
+            (term (convert-stack-to-heap (< 1 2) () () ((if-κ 3 4)))))
+(test-equal (term (eval-stackful (if (convert-stack (< 1 2)) 3 4))) 3)
+
+(test-equal (term (eval-stackful (+ (convert-stack 1) 2))) 3)
+(test-equal (term (eval-stackful (+ 1 (convert-stack 2)))) 3)
+(test-equal (term (eval-stackful (if (< (convert-stack 1) 2) 3 4))) 3)
+(test-equal (term (eval-stackful (begin (+ 1 (convert-stack (+ 2 3))) 4))) 4)
+
+(test-equal (term (eval-stackful (let-values (((a) (convert-stack (+ 1 2)))) a))) 3)
+(test-equal (term (eval-stackful (let-values (((a) (convert-stack (+ 1 2))) ((b) 4)) (+ a b)))) 7)
+(test-equal (term (eval-stackful (let-values (((b) 4) ((a) (convert-stack (+ 1 2)))) (+ a b)))) 7)
+
+(test-equal (term (eval-stackful (letrec-values (((a) (convert-stack (+ 1 2)))) a))) 3)
+(test-equal (term (eval-stackful (letrec-values (((a) (convert-stack (+ 1 2))) ((b) 4)) (+ a b)))) 7)
+#;(test-equal (term (eval-stackful (letrec-values (((b) 4) ((a) (convert-stack (+ 1 2)))) (+ a b)))) 7)
+(test-equal (term (eval-stackful (letrec-values (((fact) (lambda (n) (if (< n 1) (convert-stack 1) (* n (fact (sub1 n)))))))
+                                   (fact 5)))) 120)
+(test-equal (term (eval-stackful ((lambda (x) x) (convert-stack 3)))) 3)
+(test-equal (term (eval-stackful ((convert-stack (lambda (x) x)) 3))) 3)
+(test-equal (term (eval-stackful ((lambda (x y) x) (convert-stack 3) 4))) 3)
+(test-equal (term (eval-stackful ((lambda (x y) x) 3 (convert-stack 4)))) 3)
+(test-equal (term (eval-stackful (let-values (((a) 3)) (begin (convert-stack (set! a 5)) a)))) 5)
+(test-equal (term (eval-stackful (let-values (((a) 3)) (begin (set! a (convert-stack 5)) a)))) 5)
+
+;;;;;;;;
 
 (test-equal (term (interpret-stack a ((a s0) (b s1)) ((s0 1) (s1 2)) 0)) (term (1 ((s0 1) (s1 2)) 0)))
 (test-equal (term (interpret-stack (+ 1 5) () () 0)) (term (6 () 0)))
