@@ -10,6 +10,7 @@
        (lambda (x_!_ ...) e)
        (let-values (((x_!_) e) ...) e)
        (letrec-values (((x_!_) e) ...) e)
+       internal-letrec
        (raises e) (raise-depth) (convert-stack e)
        convert stuck] ;; expressiosn
   [v   ::= n b c (void)] ;; values
@@ -22,6 +23,8 @@
   [ρ   ::= ((x any) ...)] ;; environment
   [Σ   ::= ((x any) ...)] ;; store
 
+  ; for internal use
+  [internal-letrec ::= (letrec-values-cell-ready (((x_!_) e) ...) e)]
   [convert ::= (convert-to-stackful e) (convert-to-cek e)
            (convert-stack-to-heap e ρ Σ κ)]
   [exception ::= (stack-depth-exn n) (convert-to-cek-exn e ρ Σ)]
@@ -104,7 +107,7 @@
   [(interpret-stack (raises e) ρ Σ n) (stuck Σ n)] ; for intermediate errors
   [(interpret-stack (raise-depth) ρ Σ n) (stack-depth-exn n)]
   ; stack overflow
-  [(interpret-stack e ρ Σ n)
+  #;[(interpret-stack e ρ Σ n)
    (rc-result Σ_new n)
    (side-condition
     (and (not (redex-match? RC convert (term e)))
@@ -113,6 +116,14 @@
          (>= (term n) 10)
          (begin (printf "overflow converting to cek for ~a -- n : ~a\n" (term e) (term n)) #t)))
    (where (rc-result Σ_new) (run-cek (e ρ Σ ())))]
+  [(interpret-stack e ρ Σ n)
+   (convert-stack-to-heap e ρ Σ ())
+   (side-condition
+    (and (not (redex-match? RC convert (term e)))
+         (not (redex-match? RC x (term e)))
+         (not (redex-match? RC v (term e)))
+         (>= (term n) 10)
+         (begin (printf "overflow converting to cek for ~a -- n : ~a\n" (term e) (term n)) #t)))]
   ; convert to cek (for a single expression)
   [(interpret-stack (convert-to-cek e) ρ Σ n)
    (rc-result Σ_new n)
@@ -148,7 +159,8 @@
    (where (convert-stack-to-heap e_ast ρ_ast Σ_ast (κ ...))
           (interpret-stack e ρ Σ ,(add1 (term n))))]
   ; letrec-values
-  [(interpret-stack (letrec-values (((x_1) v_1) ... ((x) e) ((x_r) e_r) ...) e_body) ρ Σ n)
+  [(interpret-stack (letrec-values-cell-ready
+                     (((x_1) v_1) ... ((x) e) ((x_r) e_r) ...) e_body) ρ Σ n)
    (convert-stack-to-heap e_ast ρ_ast Σ_ast
                           (κ ...
                              (letrec-κ (((x_r) e_r) ...)
@@ -217,22 +229,26 @@
    exception
    (where exception (interpret-stack e ρ Σ ,(add1 (term n))))]
   ; letrec-values
-  [(interpret-stack (letrec-values (((x) v) ...) v_body) ρ Σ n) (v_body Σ n)]
-  [(interpret-stack (letrec-values (((x) v) ...) e_body) ρ Σ n)
-   (interpret-stack e_body (extend ρ (x ...) (cell_addr ...)) (extend Σ (cell_addr ...) (v ...)) n)
-   (side-condition (not (redex-match? RC v (term e_body))))
-   (where (cell_addr ...) ,(variables-not-in (term e_body) (term (x ...))))]
+  [(interpret-stack (letrec-values (((x) e) ...) e_body) ρ Σ n)
+   (interpret-stack (letrec-values-cell-ready (((x) e) ...) e_body)
+                    (extend ρ (x ...) (cell_addr ...)) Σ n)
+   (where (cell_addr ...) ,(variables-not-in (term (e_body x ...)) (term (x ...))))]
 
-  [(interpret-stack (letrec-values (((x_1) v_1) ... ((x) e) ((x_r) e_r) ...) e_body) ρ Σ n)
-   (interpret-stack (letrec-values (((x_1) v_1) ... ((x) v) ((x_r) e_r) ...) e_body) ρ (extend Σ_1 (cell_addr) (v)) n)
-   (side-condition (not (redex-match? RC v (term e))))
-   (where cell_addr ,(variable-not-in (term (e_body x_1 ... x x_r ...)) (term x)))
-   (where (v Σ_1 n_1) (interpret-stack e (extend ρ (x) (cell_addr)) Σ ,(add1 (term n))))]
+  [(interpret-stack (letrec-values-cell-ready () e_body) ρ Σ n)
+   (interpret-stack e_body ρ Σ n)]
 
-  [(interpret-stack (letrec-values (((x_1) v_1) ... ((x) e) ((x_r) e_r) ...) e_body) ρ Σ n)
+  [(interpret-stack (letrec-values-cell-ready (((x_rhs) e_rhs) ((x) e) ...) e_body) ρ Σ n)
+   (interpret-stack (letrec-values-cell-ready (((x) e) ...) e_body)
+                    ρ (extend Σ_1 ((lookup ρ x_rhs)) (v_rhs)) n)
+   (side-condition (begin 1 #;(printf "letrec -- ρ : ~a Σ : ~a\n" (term ρ) (term Σ)) true))
+   ;                                     v-- don't need to extend, the cell is already there
+   (where (v_rhs Σ_1 n_1) (interpret-stack e_rhs ρ Σ ,(add1 (term n))))]
+
+  [(interpret-stack (letrec-values-cell-ready (((x) e) ((x_r) e_r) ...) e_body) ρ Σ n)
    exception
-   (where cell_addr ,(variable-not-in (term (e_body x_1 ... x x_r ...)) (term x)))
-   (where exception (interpret-stack e (extend ρ (x) (cell_addr)) Σ ,(add1 (term n))))]
+   (where cell_addr (lookup ρ x))
+   (where exception (interpret-stack e ρ Σ ,(add1 (term n))))]
+
   ; app
   [(interpret-stack (x_func e ...) ρ Σ n)
    (interpret-stack (v_func e ...) ρ Σ n)
