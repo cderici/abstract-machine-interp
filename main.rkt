@@ -38,7 +38,7 @@
      (seq-κ e ...)
      (op-κ op (v ...) (e ...) ρ)
      (let-κ (((x) e) ...) (x ...) (v ...) e)
-     (letrec-κ (((x) e) ...) (x ...) (cell ...) (v ...) e)]
+     (letrec-κ (((x) e) ...) x e)]
 
   #:binding-forms
   (λ (x ...) e #:refers-to (shadow x ...))
@@ -71,7 +71,9 @@
   [(lookup ((x_1 any_1) ... (x any_t) (x_2 any_2) ...) x)
    any_t
    (side-condition (not (member (term x) (term (x_1 ...)))))]
-  [(lookup ((x any) ...) _) stuck])
+  [(lookup ((x any) ...) x_s)
+   stuck
+   (side-condition (not (member (term x_s) (term (x ...)))))])
 
 (define-metafunction RC
   reverse-lookup : ((x any) ...) v -> any
@@ -90,7 +92,10 @@
    rc-result_cek
    (where (convert-stack-to-heap e_ast ρ_ast Σ_ast (κ ...))
           (interpret-stack e () () 0))
-   (where (rc-result_cek Σ_cek) (run-cek (e_ast ρ_ast Σ_ast (κ ...))))]
+   (where (rc-result_cek Σ_cek) (run-cek (e_ast ρ_ast Σ_ast (κ ...))))
+   (side-condition (begin (printf "switch to CEK : ~a -- heap : ~a\n\n"
+                                  (term e_ast) (term (κ ...)))
+                          #t))]
   [(eval-stackful _) stuck])
 
 (define-metafunction RC
@@ -160,16 +165,14 @@
           (interpret-stack e ρ Σ ,(add1 (term n))))]
   ; letrec-values
   [(interpret-stack (letrec-values-cell-ready
-                     (((x_1) v_1) ... ((x) e) ((x_r) e_r) ...) e_body) ρ Σ n)
+                     (((x) e) ((x_r) e_r) ...) e_body) ρ Σ n)
    (convert-stack-to-heap e_ast ρ_ast Σ_ast
                           (κ ...
                              (letrec-κ (((x_r) e_r) ...)
-                                       (x x_1 ...)
-                                       (cell_addr (reverse-lookup Σ_ast v_1) ...) (v_1 ...)
+                                       x
                                        e_body)))
-   (where cell_addr ,(variable-not-in (term (e_body x_1 ... x x_r ...)) (term x)))
    (where (convert-stack-to-heap e_ast ρ_ast Σ_ast (κ ...))
-          (interpret-stack e (extend ρ (x) (cell_addr)) Σ ,(add1 (term n))))]
+          (interpret-stack e ρ Σ ,(add1 (term n))))]
   ; app
   [(interpret-stack ((closure x ... e_body ρ_closure) v_args ... e_arg_1 e_args ...) ρ Σ n)
    (convert-stack-to-heap e_ast ρ_ast Σ_ast
@@ -181,9 +184,11 @@
    (where (convert-stack-to-heap e_ast ρ_ast Σ_ast (κ ...))
           (interpret-stack e_f ρ Σ ,(add1 (term n))))]
 
-
+  ; value
   [(interpret-stack rc-result ρ Σ n) (rc-result Σ n)]
+  ; id lookup
   [(interpret-stack x ρ Σ n) ((lookup Σ (lookup ρ x)) Σ n)]
+  ; lambda
   [(interpret-stack (lambda (x ...) e) ρ Σ n) ((closure x ... e ρ) Σ n)]
   ; set!
   [(interpret-stack (set! x e) ρ Σ n)
@@ -240,7 +245,6 @@
   [(interpret-stack (letrec-values-cell-ready (((x_rhs) e_rhs) ((x) e) ...) e_body) ρ Σ n)
    (interpret-stack (letrec-values-cell-ready (((x) e) ...) e_body)
                     ρ (extend Σ_1 ((lookup ρ x_rhs)) (v_rhs)) n)
-   (side-condition (begin 1 #;(printf "letrec -- ρ : ~a Σ : ~a\n" (term ρ) (term Σ)) true))
    ;                                     v-- don't need to extend, the cell is already there
    (where (v_rhs Σ_1 n_1) (interpret-stack e_rhs ρ Σ ,(add1 (term n))))]
 
@@ -327,11 +331,12 @@
         [e_body (extend ρ (x_rhs ...) (cell_addr ...))
                 (extend Σ (cell_addr ...) (v v_rhs ...)) (κ ...)]
         (where (cell_addr ...) ,(variables-not-in (term e_body) (term (x_rhs ...)))) let-plug)
-   (--> [v ρ Σ ((letrec-κ () (x_rhs ...) (cell_rhs ...) (v_rhs ...) e_body) κ ...)]
-        [e_body (extend ρ (x_rhs ...) (cell_rhs ...))
-                (extend Σ (cell_rhs ...) (v v_rhs ...))
-                (κ ...)]
+   (--> [v ρ Σ ((letrec-κ () x_prev e_body) κ ...)]
+        [e_body ρ (extend Σ ((lookup ρ x_prev)) (v)) (κ ...)]
         letrec-plug)
+   (--> [(letrec-values () e_body) ρ Σ (κ ...)]
+        [e_body ρ Σ (κ ...)]
+        letrec-no-rhs)
    ; op
    (--> [v_1 ρ Σ ((op-κ op (v ...) (e_1 e ...) ρ_op) κ ...)]
         [e_1 ρ_op Σ ((op-κ op (v ... v_1) (e ...) ρ_op) κ ...)] op-switch)
@@ -359,21 +364,20 @@
    (--> [(let-values (((x_rhs) e_rhs) ((x_2) e_2) ...) e_body) ρ Σ (κ ...)]
         [e_rhs ρ Σ ((let-κ (((x_2) e_2) ...) (x_rhs) () e_body) κ ...)] let-push)
    ; letrec-values
-   (--> [v_rhs
-         ρ Σ ((letrec-κ (((x_rhs_next) e_rhs_next) ((x_2) e_2) ...)
-                        (x_rhs x ...) (cell_rhs cell ...) (v ...)
-                        e_body) κ ...)]
-        [e_rhs_next
-         (extend ρ (x_rhs) (cell_rhs_next)) Σ
-         ((letrec-κ (((x_2) e_2) ...)
-                    (x_rhs_next x_rhs x ...) (cell_rhs_next cell_rhs cell ...) (v_rhs v ...)
-                    e_body) κ ...)]
+   (--> [v_rhs ρ Σ ((letrec-κ (((x_rhs_next) e_rhs_next) ((x_rhs_rest) e_rhs_rest) ...)
+                              x_prev
+                              e_body) κ ...)]
+        [e_rhs_next ρ
+                    (extend Σ ((lookup ρ x_prev)) (v_rhs))
+                    ((letrec-κ (((x_rhs_rest) e_rhs_rest) ...) x_rhs_next e_body) κ ...)]
         letrec-rhs-switch)
-   (--> [(letrec-values (((x_rhs) e_rhs) ((x_2) e_2) ...) e_body) ρ Σ (κ ...)]
+   (--> [(letrec-values (((x_rhs) e_rhs) ((x_rhs_next) e_rhs_next) ...) e_body) ρ Σ (κ ...)]
         [e_rhs
-         (extend ρ (x_rhs) (cell_addr))
-         Σ ((letrec-κ (((x_2) e_2) ...) (x_rhs) (cell_addr) () e_body) κ ...)]
-        (where cell_addr ,(variable-not-in (term (e_body x_rhs x_2 ...)) (term cell)))
+         (extend ρ (x_rhs x_rhs_next ...) (cell_addrs ...))
+         Σ ((letrec-κ (((x_rhs_next) e_rhs_next) ...) x_rhs e_body) κ ...)]
+        (where (cell_addrs ...)
+               ,(variables-not-in (term (e_body x_rhs x_rhs_next ...))
+                                  (term (x_rhs x_rhs_next ...))))
         letrec-push)
    ; app
    (--> [(e_rator e_rands ...) ρ Σ (κ ...)]

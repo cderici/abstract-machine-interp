@@ -36,17 +36,14 @@
 (term (test-both (let-values (((a) 1)) (let-values (((f) (lambda () a))) (f))) 1))
 (term (test-both (let-values (((a) 1)) (let-values (((f) (lambda () a))) (let-values (((a) 5)) (f)))) 1))
 
-;(term (test-both (letrec-values () 3) 3))
-;(test-equal (term (eval-cek (letrec-values () 3))) 3)
-(test-equal (term (eval-stackful (letrec-values () 3))) 3)
-(test-equal (term (eval-stackful (letrec-values (((a) 2)) 3))) 3)
+(term (test-both (letrec-values () 3) 3))
 (term (test-both (letrec-values (((a) 1)) 3) 3))
-(term (test-both (letrec-values (((a) 1)) a) 1))
-(term (test-both (letrec-values (((a) 1) ((b) 2)) b) 2))
-(test-equal (term (eval-stackful (letrec-values (((a) 2) ((b) 1)) a))) 2)
-(test-equal (term (eval-stackful (letrec-values (((a) 2) ((b) 1)) b))) 1)
-(test-equal (term (eval-stackful (letrec-values (((a) 2) ((b) a)) 3))) 3)
-(test-equal (term (eval-stackful (letrec-values (((a) 2) ((b) a)) b))) 2)
+(term (test-both (letrec-values (((a) 2)) a) 2))
+(term (test-both (letrec-values (((a) 2) ((b) 1)) a) 2))
+(term (test-both (letrec-values (((a) 2) ((b) 1)) b) 1))
+(term (test-both (letrec-values (((a) 2) ((b) 1) ((c) 3) ((d) 4)) c) 3))
+(term (test-both (letrec-values (((a) 2) ((b) 1) ((c) a) ((d) b)) (+ c d)) 3))
+(term (test-both (letrec-values (((a) 2) ((b) a)) b) 2))
 
 (term (test-both (letrec-values (((a) (lambda (n) n))) 3) 3))
 (term (test-both (letrec-values (((a) (lambda (n) n))) (a 3)) 3))
@@ -93,9 +90,10 @@
 (test-equal (term (eval-stackful (let-values (((a) (convert-stack (+ 1 2))) ((b) 4)) (+ a b)))) 7)
 (test-equal (term (eval-stackful (let-values (((b) 4) ((a) (convert-stack (+ 1 2)))) (+ a b)))) 7)
 
-#;(test-equal (term (eval-stackful (letrec-values (((a) (convert-stack (+ 1 2)))) a))) 3)
-#;(test-equal (term (eval-stackful (letrec-values (((a) (convert-stack (+ 1 2))) ((b) 4)) (+ a b)))) 7)
-#;(test-equal (term (eval-stackful (letrec-values (((b) 4) ((a) (convert-stack (+ 1 2)))) (+ a b)))) 7)
+(test-equal (term (eval-stackful (letrec-values (((a) (convert-stack (+ 1 2)))) a))) 3)
+(test-equal (term (eval-stackful (letrec-values (((a) (convert-stack (+ 1 2))) ((b) 4)) (+ a b)))) 7)
+(test-equal (term (eval-stackful (letrec-values (((b) 4) ((a) (convert-stack (+ 1 2)))) (+ a b)))) 7)
+
 (test-equal (term (eval-stackful ((lambda (x) x) (convert-stack 3)))) 3)
 (test-equal (term (eval-stackful ((convert-stack (lambda (x) x)) 3))) 3)
 (test-equal (term (eval-stackful ((lambda (x y) x) (convert-stack 3) 4))) 3)
@@ -104,7 +102,6 @@
 (test-equal (term (eval-stackful (let-values (((a) 3)) (begin (set! a (convert-stack 5)) a)))) 5)
 
 (test-equal (term (eval-stackful (letrec-values (((fact) (lambda (n) (if (< n 1) (convert-stack 1) (* n (fact (sub1 n))))))) (fact 5)))) 120)
-
 
 ;;;;;;;;
 
