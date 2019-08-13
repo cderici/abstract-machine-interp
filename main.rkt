@@ -106,6 +106,33 @@
                                  (where exception (interpret-stack e ρ Σ 0))]
   [(dynamic-eval-stackful _ ρ Σ) (stuck Σ)])
 
+(define-judgment-form RC
+  #:mode (interp-stack-judge I I I I O)
+  ;#:contract (ss e ρ Σ n (rc-result Σ n))
+  [
+   -----------  "rc-result"
+   (interp-stack-judge rc-result ρ Σ n (rc-result Σ n))]
+  [
+   ----------- "raises"
+   (interp-stack-judge (raises e) ρ Σ n (stuck Σ n))]
+  [
+   ----------- "raise-depth"
+   (interp-stack-judge (raise-depth) ρ Σ n (stuc-depth-exn n))]
+  [
+   ----------- "id-lookup"
+   (interp-stack-judge x ρ Σ n ((lookup Σ (lookup ρ x)) Σ n))]
+  [
+   ----------- "lambda"
+   (interp-stack-judge (lambda (x ...) e) ρ Σ n ((closure x ... e ρ) Σ n))]
+
+  [(interp-stack-judge e ρ Σ ,(add1 (term n)) (v Σ_1 n_1))
+   ----------- "set!"
+   (interp-stack-judge (set! x e) ρ Σ n
+                       ((void) (overwrite Σ_1 (lookup ρ x) v) n))]
+  [
+   ----------- "op-reduce"
+   (interp-stack-judge (op v ...) ρ Σ n ((δ (op v ...)) Σ n))])
+
 (define-metafunction RC
   ; (expr env store stack-depth) -> (result store stack-depth)
   interpret-stack : e ρ Σ n -> (rc-result Σ n) or exception or convert
@@ -394,3 +421,6 @@
         (where (cell_addr ...) ,(variables-not-in (term e_body) (term (x ...)))) app-plug)
 
    ))
+
+
+;(traces -->cek (term ((+ 1 (+ 2 3)) () () ())))

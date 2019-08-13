@@ -133,3 +133,11 @@
                                                         (* n (fact (sub1 n)))))))
                                    (fact 5))))
             (term (stack-depth-exn 5)))
+
+(test-judgment-holds (interp-stack-judge 10 () () 0 (10 () 0)))
+(test-judgment-holds (interp-stack-judge (raises 10) () () 0 (stuck () 0)))
+(test-judgment-holds (interp-stack-judge a ((a a1)) ((a1 5)) 0 (5 ((a1 5)) 0)))
+(test-judgment-holds (interp-stack-judge (lambda (x) x) () () 0 ((closure x x ()) () 0)))
+(test-judgment-holds (interp-stack-judge (set! a 10) ((a a1)) ((a1 5)) 0 ((void) ((a1 10)) 0)))
+(test-judgment-holds (interp-stack-judge (+ 10 5) () () 0 (15 () 0)))
+#;(test-judgment-holds (interp-stack-judge (+ 10 (+ 2 3)) () () 0 (15 () 0)))
