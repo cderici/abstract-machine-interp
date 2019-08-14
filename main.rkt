@@ -129,6 +129,7 @@
    ----------- "set!"
    (interp-stack-judge (set! x e) ρ Σ n
                        ((void) (overwrite Σ_1 (lookup ρ x) v) n))]
+  ; begin
   [
    ----------- "begin-reduce"
    (interp-stack-judge (begin v ... v_last) ρ Σ n (v_last Σ n))]
@@ -138,7 +139,7 @@
    (interp-stack-judge (begin v ... v_1 e ...) ρ Σ_1 n (v_2 Σ_2 n_2))
    ----------- "begin-exprs"
    (interp-stack-judge (begin v ... e_1 e ...) ρ Σ n (v_2 Σ_1 n))]
-
+  ; op
   [
    ----------- "op-reduce"
    (interp-stack-judge (op v ...) ρ Σ n ((δ (op v ...)) Σ n))]
@@ -148,7 +149,7 @@
    (interp-stack-judge (op v ... v_1 e ...) ρ Σ_1 n (v_2 Σ_2 n_2))
    ----------- "op-args"
    (interp-stack-judge (op v ... e_1 e ...) ρ Σ n (v_2 Σ_2 n))]
-
+  ; if
   [(interp-stack-judge e_tst ρ Σ n (v_tst Σ_tst n))
    (side-condition ,(equal? (term v_tst) (term false)))
    (interp-stack-judge e_els ρ Σ_tst n (v_els Σ_els n))
@@ -159,7 +160,7 @@
    (interp-stack-judge e_thn ρ Σ_tst n (v_thn Σ_thn n))
    ----------- "if-true"
    (interp-stack-judge (if e_tst e_thn e_els) ρ Σ n (v_thn Σ_thn n))]
-
+  ; let-values
   [(where (cell_addr ...) ,(variables-not-in (term e_body) (term (x ...))))
    (interp-stack-judge e_body
                        (extend ρ (x ...) (cell_addr ...))
@@ -174,6 +175,26 @@
    (interp-stack-judge (let-values (((x_1) v_1) ... ((x) v) ((x_r) e_r) ...) e_body) ρ Σ_1 n (v_body Σ_body n))
    ----------- "let-values-rhss"
    (interp-stack-judge (let-values (((x_1) v_1) ... ((x) e) ((x_r) e_r) ...) e_body) ρ Σ n (v_body Σ_body n))]
+  ; letrec-values
+  [(where (cell_addr ...) ,(variables-not-in (term (e_body x ...)) (term (x ...))))
+   (interp-stack-judge (letrec-values-cell-ready (((x) e) ...) e_body)
+                       (extend ρ (x ...) (cell_addr ...)) Σ n
+                       (v_body Σ_body n))
+   ----------- "letrec-values-gen-cells"
+   (interp-stack-judge (letrec-values (((x) e) ...) e_body) ρ Σ n
+                       (v_body Σ_body n))]
+
+  [(interp-stack-judge e_body ρ Σ n (v_body Σ_body n))
+   ----------- "letrec-values-reduce"
+   (interp-stack-judge (letrec-values-cell-ready () e_body) ρ Σ n (v_body Σ_body n))]
+
+  [(interp-stack-judge e_rhs ρ Σ ,(add1 (term n)) (v_rhs Σ_1 n_1))
+   (interp-stack-judge (letrec-values-cell-ready (((x) e) ...) e_body)
+                       ρ (extend Σ_1 ((lookup ρ x_rhs)) (v_rhs)) n
+                       (v_body Σ_body n))
+   ----------- "letrec-values-rhss"
+   (interp-stack-judge (letrec-values-cell-ready (((x_rhs) e_rhs) ((x) e) ...) e_body) ρ Σ n (v_body Σ_body n))]
+
   )
 
 (define-metafunction RC

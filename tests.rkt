@@ -43,7 +43,6 @@
 (term (test-both (letrec-values (((a) 2) ((b) 1)) b) 1))
 (term (test-both (letrec-values (((a) 2) ((b) 1) ((c) 3) ((d) 4)) c) 3))
 (term (test-both (letrec-values (((a) 2) ((b) 1) ((c) a) ((d) b)) (+ c d)) 3))
-(term (test-both (letrec-values (((a) 2) ((b) a)) b) 2))
 
 (term (test-both (letrec-values (((a) (lambda (n) n))) 3) 3))
 (term (test-both (letrec-values (((a) (lambda (n) n))) (a 3)) 3))
@@ -152,5 +151,13 @@
 (test-judgment-holds (interp-stack-judge (let-values (((x) 3)) x) () () 0 (3 _ 0)))
 (test-judgment-holds (interp-stack-judge (let-values (((x) 3)((y) 15)) (+ x y)) () () 0 (18 _ 0)))
 (test-judgment-holds (interp-stack-judge (let-values (((x) 3)((y) 15)) (let-values (((x) 9)((y) 25)) (let-values (((z) 8)) (+ x y z)))) () () 0 (42 _ 0)))
+
+(test-judgment-holds (interp-stack-judge (letrec-values () 3) () () 0 (3 _ 0)))
+(test-judgment-holds (interp-stack-judge (letrec-values (((a) 1)) 3) () () 0 (3 _ 0)))
+(test-judgment-holds (interp-stack-judge (letrec-values (((a) 2)) a) () () 0 (2 _ 0)))
+(test-judgment-holds (interp-stack-judge (letrec-values (((a) 2) ((b) 1)) a) () () 0 (2 _ 0)))
+(test-judgment-holds (interp-stack-judge (letrec-values (((a) 2) ((b) 1)) b) () () 0 (1 _ 0)))
+(test-judgment-holds (interp-stack-judge (letrec-values (((a) 2) ((b) 1) ((c) 3) ((d) 4)) c) () () 0 (3 _ 0)))
+(test-judgment-holds (interp-stack-judge (letrec-values (((a) 2) ((b) 1) ((c) a) ((d) b)) (+ c d)) () () 0 (3 _ 0)))
 
 ;(build-derivations (interp-stack-judge (+ 10 (+ 2 3)) () () 0 (15 () 0)))
