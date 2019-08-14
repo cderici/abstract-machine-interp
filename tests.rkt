@@ -160,4 +160,15 @@
 (test-judgment-holds (interp-stack-judge (letrec-values (((a) 2) ((b) 1) ((c) 3) ((d) 4)) c) () () 0 (3 _ 0)))
 (test-judgment-holds (interp-stack-judge (letrec-values (((a) 2) ((b) 1) ((c) a) ((d) b)) (+ c d)) () () 0 (3 _ 0)))
 
+
+(test-judgment-holds (interp-stack-judge ((lambda (x) x) 3) () () 0 (3 _ 0)))
+(test-judgment-holds (interp-stack-judge (letrec-values (((a) (lambda (n) n))) (a 3)) () () 0 (3 _ 0)))
+(test-judgment-holds (interp-stack-judge
+                      (letrec-values (((a) (lambda (n) (if (< n 1) 1 13)))) (a 3))
+                      () () 0 (13 _ 0)))
+(test-judgment-holds (interp-stack-judge
+                      (letrec-values (((fact) (lambda (n) (if (< n 1) 1 (* n (fact (sub1 n)))))))
+                                    (fact 5))
+                      () () 0 (120 _ 0)))
+
 ;(build-derivations (interp-stack-judge (+ 10 (+ 2 3)) () () 0 (15 () 0)))

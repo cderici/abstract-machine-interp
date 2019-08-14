@@ -194,6 +194,28 @@
                        (v_body Σ_body n))
    ----------- "letrec-values-rhss"
    (interp-stack-judge (letrec-values-cell-ready (((x_rhs) e_rhs) ((x) e) ...) e_body) ρ Σ n (v_body Σ_body n))]
+  ; app
+  [(where v_func (lookup Σ (lookup ρ x_func)))
+   (interp-stack-judge (v_func e ...) ρ Σ n (v_ret Σ_ret n))
+   ----------- "app-resolve-rator"
+   (interp-stack-judge (x_func e ...) ρ Σ n (v_ret Σ_ret n))]
+
+  [(side-condition ,(not (redex-match? RC v (term e_f))))
+   (interp-stack-judge e_f ρ Σ ,(add1 (term n)) (v_func Σ_1 n_1))
+   (interp-stack-judge (v_func e_args ...) ρ Σ_1 n (v_ret Σ_ret n))
+   ----------- "app-eval-rator"
+   (interp-stack-judge (e_f e_args ...) ρ Σ n (v_ret Σ_ret n))]
+
+  [(where (cell_addr ...) ,(variables-not-in (term e_body) (term (x ...))))
+   (interp-stack-judge e_body (extend ρ_closure (x ...) (cell_addr ...)) (extend Σ (cell_addr ...) (v_args ...)) n (v_ret Σ_ret n))
+   ----------- "app-apply"
+   (interp-stack-judge ((closure x ... e_body ρ_closure) v_args ...) ρ Σ n (v_ret Σ_ret n))]
+
+  [(side-condition ,(not (redex-match? RC v (term e_arg_1))))
+   (interp-stack-judge e_arg_1 ρ Σ ,(add1 (term n)) (v_arg_1 Σ_1 n_1))
+   (interp-stack-judge ((closure x ... e_body ρ_closure) v_args ... v_arg_1 e_args ...) ρ Σ_1 n (v_ret Σ_ret n))
+   ----------- "app-args"
+   (interp-stack-judge ((closure x ... e_body ρ_closure) v_args ... e_arg_1 e_args ...) ρ Σ n(v_ret Σ_ret n))]
 
   )
 
@@ -351,18 +373,24 @@
   [(interpret-stack (x_func e ...) ρ Σ n)
    (interpret-stack (v_func e ...) ρ Σ n)
    (where v_func (lookup Σ (lookup ρ x_func)))]
+
   [(interpret-stack ((closure x ... e_body ρ_closure) v_args ...) ρ Σ n)
    (interpret-stack e_body (extend ρ_closure (x ...) (cell_addr ...)) (extend Σ (cell_addr ...) (v_args ...)) n)
    (where (cell_addr ...) ,(variables-not-in (term e_body) (term (x ...))))]
+
+
   [(interpret-stack ((closure x ... e_body ρ_closure) v_args ... e_arg_1 e_args ...) ρ Σ n)
    (interpret-stack ((closure x ... e_body ρ_closure) v_args ... v_arg_1 e_args ...) ρ Σ_1 n)
    (side-condition (not (redex-match? RC v (term e_arg_1))))
    (where (v_arg_1 Σ_1 n_1) (interpret-stack e_arg_1 ρ Σ ,(add1 (term n))))]
+
+
+
   [(interpret-stack ((closure x ... e_body ρ_closure) v_args ... e_arg_1 e_args ...) ρ Σ n)
    exception
    (where exception (interpret-stack e_arg_1 ρ Σ ,(add1 (term n))))]
   [(interpret-stack (e_f e_args ...) ρ Σ n)
-   (interpret-stack (v_func e_args ...) ρ Σ n)
+   (interpret-stack (v_func e_args ...) ρ Σ_1 n)
    (where (v_func Σ_1 n_1) (interpret-stack e_f ρ Σ ,(add1 (term n))))]
   [(interpret-stack (e_f e_args ...) ρ Σ n)
    exception
