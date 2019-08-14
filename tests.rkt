@@ -1,4 +1,4 @@
-#lang racket
+#lang racket/base
 
 (require redex "main.rkt")
 
@@ -146,3 +146,11 @@
 
 (test-judgment-holds (interp-stack-judge (+ 10 (begin (set! a 42) (+ 2 3)))
                                          ((a a1)) ((a1 13)) 0 (15 ((a1 42)) 0)))
+(test-judgment-holds (interp-stack-judge (if (< 1 2) 3 4) () () 0 (3 () 0)))
+(test-judgment-holds (interp-stack-judge (if (< 2 1) 3 4) () () 0 (4 () 0)))
+(test-judgment-holds (interp-stack-judge (let-values () 4) () () 0 (4 () 0)))
+(test-judgment-holds (interp-stack-judge (let-values (((x) 3)) x) () () 0 (3 _ 0)))
+(test-judgment-holds (interp-stack-judge (let-values (((x) 3)((y) 15)) (+ x y)) () () 0 (18 _ 0)))
+(test-judgment-holds (interp-stack-judge (let-values (((x) 3)((y) 15)) (let-values (((x) 9)((y) 25)) (let-values (((z) 8)) (+ x y z)))) () () 0 (42 _ 0)))
+
+;(build-derivations (interp-stack-judge (+ 10 (+ 2 3)) () () 0 (15 () 0)))

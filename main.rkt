@@ -1,4 +1,4 @@
-#lang racket
+#lang racket/base
 
 (require redex)
 
@@ -147,8 +147,34 @@
    (interp-stack-judge e_1 ρ Σ ,(add1 (term n)) (v_1 Σ_1 n_1))
    (interp-stack-judge (op v ... v_1 e ...) ρ Σ_1 n (v_2 Σ_2 n_2))
    ----------- "op-args"
-   (interp-stack-judge (op v ... e_1 e ...) ρ Σ n (v_2 Σ_2 n))
-   ])
+   (interp-stack-judge (op v ... e_1 e ...) ρ Σ n (v_2 Σ_2 n))]
+
+  [(interp-stack-judge e_tst ρ Σ n (v_tst Σ_tst n))
+   (side-condition ,(equal? (term v_tst) (term false)))
+   (interp-stack-judge e_els ρ Σ_tst n (v_els Σ_els n))
+   ----------- "if-false"
+   (interp-stack-judge (if e_tst e_thn e_els) ρ Σ n (v_els Σ_els n))]
+  [(interp-stack-judge e_tst ρ Σ n (v_tst Σ_tst n))
+   (side-condition ,(not (equal? (term v_tst) (term false))))
+   (interp-stack-judge e_thn ρ Σ_tst n (v_thn Σ_thn n))
+   ----------- "if-true"
+   (interp-stack-judge (if e_tst e_thn e_els) ρ Σ n (v_thn Σ_thn n))]
+
+  [(where (cell_addr ...) ,(variables-not-in (term e_body) (term (x ...))))
+   (interp-stack-judge e_body
+                       (extend ρ (x ...) (cell_addr ...))
+                       (extend Σ (cell_addr ...) (v ...)) n
+                       (v_body Σ_body n))
+   ----------- "let-values-reduce"
+   (interp-stack-judge (let-values (((x) v) ...) e_body) ρ Σ n
+                       (v_body Σ_body n))]
+
+  [(side-condition ,(not (redex-match? RC v (term e))))
+   (interp-stack-judge e ρ Σ ,(add1 (term n)) (v Σ_1 n_1))
+   (interp-stack-judge (let-values (((x_1) v_1) ... ((x) v) ((x_r) e_r) ...) e_body) ρ Σ_1 n (v_body Σ_body n))
+   ----------- "let-values-rhss"
+   (interp-stack-judge (let-values (((x_1) v_1) ... ((x) e) ((x_r) e_r) ...) e_body) ρ Σ n (v_body Σ_body n))]
+  )
 
 (define-metafunction RC
   ; (expr env store stack-depth) -> (result store stack-depth)
