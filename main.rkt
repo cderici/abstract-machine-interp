@@ -130,8 +130,25 @@
    (interp-stack-judge (set! x e) ρ Σ n
                        ((void) (overwrite Σ_1 (lookup ρ x) v) n))]
   [
+   ----------- "begin-reduce"
+   (interp-stack-judge (begin v ... v_last) ρ Σ n (v_last Σ n))]
+  ; FIXME: the last expr should be in tail position
+  [(side-condition ,(not (redex-match? RC v (term e_1))))
+   (interp-stack-judge e_1 ρ Σ ,(add1 (term n)) (v_1 Σ_1 n_1))
+   (interp-stack-judge (begin v ... v_1 e ...) ρ Σ_1 n (v_2 Σ_2 n_2))
+   ----------- "begin-exprs"
+   (interp-stack-judge (begin v ... e_1 e ...) ρ Σ n (v_2 Σ_1 n))]
+
+  [
    ----------- "op-reduce"
-   (interp-stack-judge (op v ...) ρ Σ n ((δ (op v ...)) Σ n))])
+   (interp-stack-judge (op v ...) ρ Σ n ((δ (op v ...)) Σ n))]
+
+  [(side-condition ,(not (redex-match? RC v (term e_1))))
+   (interp-stack-judge e_1 ρ Σ ,(add1 (term n)) (v_1 Σ_1 n_1))
+   (interp-stack-judge (op v ... v_1 e ...) ρ Σ_1 n (v_2 Σ_2 n_2))
+   ----------- "op-args"
+   (interp-stack-judge (op v ... e_1 e ...) ρ Σ n (v_2 Σ_2 n))
+   ])
 
 (define-metafunction RC
   ; (expr env store stack-depth) -> (result store stack-depth)
@@ -223,10 +240,13 @@
    (where (v Σ_1 n_1) (interpret-stack e ρ Σ ,(add1 (term n))))]
   ; op
   [(interpret-stack (op v ...) ρ Σ n) ((δ (op v ...)) Σ n)]
+
   [(interpret-stack (op v ... e_1 e ...) ρ Σ n)
    (interpret-stack (op v ... v_1 e ...) ρ Σ_1 n)
    (side-condition (not (redex-match? RC v (term e_1))))
    (where (v_1 Σ_1 n_1) (interpret-stack e_1 ρ Σ ,(add1 (term n))))]
+
+
   [(interpret-stack (op v ... e_1 e ...) ρ Σ n)
    (stuck Σ_1 n_1)
    (where (stuck Σ_1 n_1) (interpret-stack e_1 ρ Σ ,(add1 (term n))))]
